@@ -46,13 +46,13 @@ abaixo. Para copiar e colar, substitua `IP_SERVIDOR` primeiro.
 ```text
 curl -i http://IP_SERVIDOR:8080/
 curl -I http://IP_SERVIDOR:8080/
-curl -I http://IP_SERVIDOR:8080/network.png
+curl -I http://IP_SERVIDOR:8080/weird.jpeg
 curl -i http://IP_SERVIDOR:8080/nao-existe.txt
 curl -i -X POST http://IP_SERVIDOR:8080/
 curl -i --request-target "*" http://IP_SERVIDOR:8080/
 ```
 
-Esperado, na ordem: `200`, `200` sem corpo, `200` com `image/png` sem imprimir
+Esperado, na ordem: `200`, `200` sem corpo, `200` com `image/jpeg` sem imprimir
 o arquivo binario, `404`,
 `405` com `Allow: GET, HEAD`, e `400`. Em **todas** as respostas, confira
 `HTTP/1.1`, `Content-Length`, `Content-Type`, `Date` em GMT e `Server: Grupo7`.

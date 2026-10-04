@@ -165,7 +165,7 @@ tcp.port == 8080
 ```
 
 Nao use capturas de `localhost` no relatorio. A pagina `www/index.html`
-referencia CSS, JavaScript e PNG, portanto o navegador realiza varias
+referencia CSS, JavaScript e JPEG, portanto o navegador realiza varias
 requisicoes e permite testar a interoperabilidade com outro grupo.
 
 ## Medicao C1 x C2

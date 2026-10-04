@@ -43,7 +43,10 @@ h1 {
 
 img {
   width: 100%;
-  margin-top: 1.25rem;
+  max-width: 429px;
+  height: auto;
+  display: block;
+  margin: 1.25rem auto 0;
   border-radius: 1rem;
 }
 
@@ -56,4 +59,3 @@ img {
   color: #176b3a;
   font-weight: 700;
 }
-
