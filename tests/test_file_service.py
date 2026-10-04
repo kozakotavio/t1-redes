@@ -61,6 +61,21 @@ class FileServiceTests(unittest.TestCase):
             "application/octet-stream",
         )
 
+    def test_tipos_mime_obrigatorios(self):
+        expected = {
+            ".html": "text/html; charset=utf-8",
+            ".css": "text/css; charset=utf-8",
+            ".js": "text/javascript; charset=utf-8",
+            ".json": "application/json; charset=utf-8",
+            ".txt": "text/plain; charset=utf-8",
+            ".png": "image/png",
+            ".jpg": "image/jpeg",
+            ".pdf": "application/pdf",
+        }
+        for suffix, content_type in expected.items():
+            with self.subTest(suffix=suffix):
+                self.assertEqual(content_type_for(Path("arquivo" + suffix)), content_type)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,3 +1,5 @@
+import contextlib
+import io
 import socket
 import tempfile
 import threading
@@ -5,7 +7,8 @@ import time
 import unittest
 from pathlib import Path
 
-from server import Part1HTTPServer
+from server import HTTPServer
+from tools.measure_connections import run_scenario
 
 
 def split_response(response):
@@ -18,9 +21,30 @@ def split_response(response):
     return lines[0], headers, body
 
 
+def read_response(client, pending=b"", *, expect_body=True):
+    """Le uma resposta sem esperar o fechamento da conexao persistente."""
+
+    buffer = bytearray(pending)
+    while b"\r\n\r\n" not in buffer:
+        chunk = client.recv(4096)
+        if not chunk:
+            raise AssertionError("Conexao fechou antes dos cabecalhos da resposta")
+        buffer.extend(chunk)
+
+    head_end = buffer.index(b"\r\n\r\n") + 4
+    _status, headers, _body = split_response(bytes(buffer[:head_end]))
+    end = head_end + (int(headers["content-length"]) if expect_body else 0)
+    while len(buffer) < end:
+        chunk = client.recv(4096)
+        if not chunk:
+            raise AssertionError("Conexao fechou antes do corpo completo")
+        buffer.extend(chunk)
+    return bytes(buffer[:end]), bytes(buffer[end:])
+
+
 class RunningServer:
-    def __init__(self, root):
-        self.server = Part1HTTPServer("127.0.0.1", 0, root, client_timeout=1.0)
+    def __init__(self, root, timeout=1.0):
+        self.server = HTTPServer("127.0.0.1", 0, root, client_timeout=timeout)
         self.ready = threading.Event()
         self.thread = threading.Thread(
             target=self.server.serve_forever,
@@ -45,12 +69,10 @@ class RunningServer:
     def request(self, raw_request):
         with socket.create_connection(self.address, timeout=2) as client:
             client.sendall(raw_request)
-            chunks = []
-            while True:
-                chunk = client.recv(4096)
-                if not chunk:
-                    return b"".join(chunks)
-                chunks.append(chunk)
+            response, _leftover = read_response(
+                client, expect_body=not raw_request.startswith(b"HEAD ")
+            )
+            return response
 
 
 class ServerIntegrationTests(unittest.TestCase):
@@ -100,7 +122,10 @@ class ServerIntegrationTests(unittest.TestCase):
                     response = running.request(request)
                     status, headers, _body = split_response(response)
                     self.assertTrue(status.startswith(f"HTTP/1.1 {expected_status} "))
-                    self.assertEqual(headers["connection"], "close")
+                    self.assertEqual(
+                        headers["connection"],
+                        "close" if expected_status in (400, 405) else "keep-alive",
+                    )
                     if expected_status == 405:
                         self.assertEqual(headers["allow"], "GET, HEAD")
 
@@ -122,7 +147,7 @@ class ServerIntegrationTests(unittest.TestCase):
         self.assertLess(elapsed, 0.75)
 
     def test_shutdown_fecha_socket_mesmo_se_thread_limpar_atributo(self):
-        server = Part1HTTPServer("127.0.0.1", 0, self.root)
+        server = HTTPServer("127.0.0.1", 0, self.root)
 
         class SocketSimulado:
             def __init__(self):
@@ -140,6 +165,77 @@ class ServerIntegrationTests(unittest.TestCase):
         server.shutdown()
 
         self.assertTrue(socket_simulado.closed)
+
+    def test_dez_requisicoes_sequenciais_na_mesma_conexao(self):
+        with RunningServer(self.root) as running:
+            with socket.create_connection(running.address, timeout=2) as client:
+                client.settimeout(2)
+                for number in range(10):
+                    client.sendall(b"GET / HTTP/1.1\r\nHost: teste\r\n\r\n")
+                    response, leftover = read_response(client)
+                    status, headers, body = split_response(response)
+                    self.assertEqual(status, "HTTP/1.1 200 OK")
+                    self.assertEqual(headers["connection"], "keep-alive")
+                    self.assertEqual(body, b"ola rede")
+                    self.assertEqual(leftover, b"", msg=f"resposta {number}")
+
+    def test_requisicoes_agrupadas_no_mesmo_envio(self):
+        with RunningServer(self.root) as running:
+            with socket.create_connection(running.address, timeout=2) as client:
+                client.settimeout(2)
+                client.sendall(
+                    b"GET / HTTP/1.1\r\nHost: teste\r\n\r\n"
+                    b"GET /imagem.png HTTP/1.1\r\nHost: teste\r\n\r\n"
+                )
+                first, pending = read_response(client)
+                second, pending = read_response(client, pending)
+
+        self.assertEqual(split_response(first)[2], b"ola rede")
+        self.assertEqual(split_response(second)[1]["content-type"], "image/png")
+        self.assertEqual(pending, b"")
+
+    def test_connection_close_devolve_cabecalho_e_fecha_socket(self):
+        with RunningServer(self.root) as running:
+            with socket.create_connection(running.address, timeout=2) as client:
+                client.settimeout(2)
+                client.sendall(
+                    b"GET / HTTP/1.1\r\nHost: teste\r\nConnection: CLOSE\r\n\r\n"
+                )
+                response, _pending = read_response(client)
+                self.assertEqual(split_response(response)[1]["connection"], "close")
+                self.assertEqual(client.recv(1), b"")
+
+    def test_timeout_fecha_conexao_ociosa_sem_resposta_extra(self):
+        with RunningServer(self.root, timeout=0.25) as running:
+            with socket.create_connection(running.address, timeout=2) as client:
+                client.settimeout(2)
+                client.sendall(b"GET / HTTP/1.1\r\nHost: teste\r\n\r\n")
+                response, _pending = read_response(client)
+                self.assertEqual(split_response(response)[1]["connection"], "keep-alive")
+                self.assertEqual(client.recv(1), b"")
+
+    def test_corpo_nao_suportado_retorna_400_e_fecha(self):
+        with RunningServer(self.root) as running:
+            response = running.request(
+                b"GET / HTTP/1.1\r\nHost: teste\r\nContent-Length: 3\r\n\r\nabc"
+            )
+
+        status, headers, _body = split_response(response)
+        self.assertEqual(status, "HTTP/1.1 400 Bad Request")
+        self.assertEqual(headers["connection"], "close")
+
+    def test_cliente_de_medicao_c1_e_c2(self):
+        with RunningServer(self.root) as running:
+            host, port = running.address
+            for mode, expected_connections in (("c1", 3), ("c2", 1)):
+                with self.subTest(mode=mode):
+                    output = io.StringIO()
+                    with contextlib.redirect_stdout(output):
+                        run_scenario(host, port, "/", mode, 3)
+                    self.assertIn("3 requisicoes", output.getvalue())
+                    self.assertIn(
+                        f"{expected_connections} conexao(oes)", output.getvalue()
+                    )
 
 
 if __name__ == "__main__":

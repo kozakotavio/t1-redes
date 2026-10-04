@@ -15,6 +15,7 @@ from file_service import (
 )
 from http_protocol import (
     BadRequestError,
+    ClientDisconnected,
     HTTPRequest,
     build_response,
     make_error_body,
@@ -27,8 +28,8 @@ LOG = logging.getLogger("t1-redes")
 ERROR_CONTENT_TYPE = "text/html; charset=utf-8"
 
 
-class Part1HTTPServer:
-    """Servidor concorrente: uma thread e uma requisicao por conexao."""
+class HTTPServer:
+    """Servidor concorrente: uma thread por conexao TCP persistente."""
 
     def __init__(
         self,
@@ -109,30 +110,45 @@ class Part1HTTPServer:
                 pass
 
     def _serve_client(self, client_socket: socket.socket, client_address) -> None:
-        request: Optional[HTTPRequest] = None
-        status_code = 400
+        pending = b""
         try:
             client_socket.settimeout(self.client_timeout)
-            head, leftover = receive_request_head(client_socket)
-            request = parse_request(head)
-            status_code, response = self._response_for(request)
-            client_socket.sendall(response)
-            LOG.info(
-                '%s:%s "%s %s" %s sobra=%s',
-                client_address[0],
-                client_address[1],
-                request.method,
-                request.target,
-                status_code,
-                len(leftover),
-            )
-        except (BadRequestError, socket.timeout) as exc:
-            response = _error_response(400)
-            try:
+            while not self._shutdown.is_set():
+                try:
+                    head, pending = receive_request_head(client_socket, pending)
+                    request = parse_request(head)
+                except ClientDisconnected:
+                    break
+                except socket.timeout:
+                    LOG.info("%s:%s conexao ociosa encerrada", *client_address[:2])
+                    break
+                except BadRequestError as exc:
+                    client_socket.sendall(_error_response(400, close_connection=True))
+                    LOG.warning("%s:%s requisicao invalida: %s", *client_address[:2], exc)
+                    break
+
+                if _has_unsupported_request_body(request):
+                    client_socket.sendall(_error_response(400, close_connection=True))
+                    LOG.warning("%s:%s corpo de requisicao nao suportado", *client_address[:2])
+                    break
+
+                close_connection = (
+                    _client_requests_close(request) or request.method not in {"GET", "HEAD"}
+                )
+                status_code, response = self._response_for(request, close_connection)
                 client_socket.sendall(response)
-            except OSError:
-                pass
-            LOG.warning("%s:%s requisicao invalida: %s", *client_address[:2], exc)
+                LOG.info(
+                    '%s:%s "%s %s" %s conexao=%s sobra=%s',
+                    client_address[0],
+                    client_address[1],
+                    request.method,
+                    request.target,
+                    status_code,
+                    "close" if close_connection else "keep-alive",
+                    len(pending),
+                )
+                if close_connection:
+                    break
         except (ConnectionError, OSError) as exc:
             LOG.warning("%s:%s conexao encerrada: %s", *client_address[:2], exc)
         finally:
@@ -143,10 +159,11 @@ class Part1HTTPServer:
                 with self._threads_lock:
                     self._threads.discard(current)
 
-    def _response_for(self, request: HTTPRequest) -> Tuple[int, bytes]:
+    def _response_for(self, request: HTTPRequest, close_connection: bool) -> Tuple[int, bytes]:
         if request.method not in {"GET", "HEAD"}:
             return 405, _error_response(
                 405,
+                close_connection=close_connection,
                 extra_headers=(("Allow", "GET, HEAD"),),
             )
 
@@ -159,15 +176,24 @@ class Part1HTTPServer:
                 body,
                 content_type,
                 include_body=include_body,
+                close_connection=close_connection,
             )
         except InvalidTargetError:
-            return 400, _error_response(400, include_body=include_body)
+            return 400, _error_response(
+                400, include_body=include_body, close_connection=close_connection
+            )
         except ForbiddenPathError:
-            return 403, _error_response(403, include_body=include_body)
+            return 403, _error_response(
+                403, include_body=include_body, close_connection=close_connection
+            )
         except StaticFileNotFoundError:
-            return 404, _error_response(404, include_body=include_body)
+            return 404, _error_response(
+                404, include_body=include_body, close_connection=close_connection
+            )
         except PermissionError:
-            return 403, _error_response(403, include_body=include_body)
+            return 403, _error_response(
+                403, include_body=include_body, close_connection=close_connection
+            )
 
     def _join_workers(self) -> None:
         with self._threads_lock:
@@ -180,6 +206,7 @@ def _error_response(
     status_code: int,
     *,
     include_body: bool = True,
+    close_connection: bool = False,
     extra_headers=(),
 ) -> bytes:
     body = make_error_body(status_code)
@@ -188,8 +215,29 @@ def _error_response(
         body,
         ERROR_CONTENT_TYPE,
         include_body=include_body,
+        close_connection=close_connection,
         extra_headers=extra_headers,
     )
+
+
+def _client_requests_close(request: HTTPRequest) -> bool:
+    """Connection e uma lista de tokens sem diferenca entre maiusculas/minusculas."""
+
+    return any(
+        token.strip().lower() == "close"
+        for token in request.headers.get("connection", "").split(",")
+    )
+
+
+def _has_unsupported_request_body(request: HTTPRequest) -> bool:
+    """Evita interpretar bytes de um corpo como a proxima requisicao."""
+
+    if request.method not in {"GET", "HEAD"}:
+        return False  # 405 e fechamento imediato, sem tentar ler o corpo.
+    if "transfer-encoding" in request.headers:
+        return True
+    length = request.headers.get("content-length")
+    return length is not None and (not length.isdecimal() or int(length) != 0)
 
 
 def valid_port(value: str) -> int:
@@ -224,7 +272,7 @@ def main() -> None:
         level=logging.INFO,
         format="%(asctime)s %(levelname)s [%(threadName)s] %(message)s",
     )
-    server = Part1HTTPServer("0.0.0.0", args.port, args.root)
+    server = HTTPServer("0.0.0.0", args.port, args.root)
     try:
         server.serve_forever()
     except KeyboardInterrupt:

@@ -12,7 +12,7 @@ from typing import Dict, Iterable, Mapping, Optional, Tuple
 
 HEADER_TERMINATOR = b"\r\n\r\n"
 MAX_HEADER_BYTES = 64 * 1024
-SERVER_ID = "Grupo-Kozak/1.0"
+SERVER_ID = "Grupo7"
 
 STATUS_REASONS = {
     200: "OK",
@@ -29,6 +29,10 @@ _TOKEN_CHARS = frozenset(
 
 class BadRequestError(ValueError):
     """Indica que os bytes recebidos nao formam uma requisicao valida."""
+
+
+class ClientDisconnected(ConnectionError):
+    """O cliente encerrou uma conexao ociosa sem enviar outra requisicao."""
 
 
 @dataclass(frozen=True)
@@ -49,8 +53,7 @@ def receive_request_head(
     """Le ate o fim dos cabecalhos e devolve ``(cabecalho, sobra)``.
 
     A sobra e importante porque um unico ``recv`` pode conter o final da
-    requisicao atual e o inicio da seguinte. A Parte 1 fecha a conexao depois
-    da resposta, mas a Parte 2 reutilizara esse valor.
+    requisicao atual e o inicio da seguinte na mesma conexao persistente.
     """
 
     buffer = bytearray(initial_data)
@@ -69,6 +72,8 @@ def receive_request_head(
 
         chunk = client_socket.recv(4096)
         if not chunk:
+            if not buffer:
+                raise ClientDisconnected()
             raise BadRequestError("Conexao encerrada antes do fim dos cabecalhos")
         buffer.extend(chunk)
 
@@ -115,6 +120,9 @@ def parse_request(head: bytes) -> HTTPRequest:
         else:
             headers[normalized_name] = normalized_value
 
+    if not headers.get("host") or "," in headers["host"]:
+        raise BadRequestError("HTTP/1.1 exige exatamente um Host nao vazio")
+
     return HTTPRequest(method, target, version, headers)
 
 
@@ -124,9 +132,10 @@ def build_response(
     content_type: str,
     *,
     include_body: bool = True,
+    close_connection: bool = False,
     extra_headers: Optional[Iterable[Tuple[str, str]]] = None,
 ) -> bytes:
-    """Monta uma resposta HTTP/1.1 completa para a Parte 1."""
+    """Monta uma resposta HTTP/1.1 com enquadramento e politica de conexao."""
 
     try:
         reason = STATUS_REASONS[status_code]
@@ -138,7 +147,7 @@ def build_response(
         ("Server", SERVER_ID),
         ("Content-Length", str(len(body))),
         ("Content-Type", content_type),
-        ("Connection", "close"),
+        ("Connection", "close" if close_connection else "keep-alive"),
     ]
     if extra_headers:
         headers.extend(extra_headers)
@@ -164,4 +173,3 @@ def make_error_body(status_code: int) -> bytes:
 
 def _is_token(value: str) -> bool:
     return bool(value) and all(character in _TOKEN_CHARS for character in value)
-

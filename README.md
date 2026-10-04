@@ -1,8 +1,14 @@
 # T1 - Servidor HTTP/1.1 sobre sockets TCP
 
-Implementacao didatica da Parte 1 do trabalho de Laboratorio de Redes de
+Implementacao didatica das Partes 1 e 2 do trabalho de Laboratorio de Redes de
 Computadores. O servidor usa diretamente a API de sockets TCP da biblioteca
 padrao do Python. Nenhum framework ou servidor HTTP pronto e utilizado.
+
+O [roteiro de testes](ROTEIRO_DE_TESTES.md) descreve a validacao entre
+maquinas e a coleta C1/C2. O [relatorio tecnico](RELATORIO_TECNICO.md)
+explica a arquitetura, cada modulo e as analises exigidas; ha tambem uma
+[versao PDF](output/pdf/relatorio_tecnico_grupo7.pdf). Campos experimentais
+seguem marcados como pendentes ate a captura entre maquinas distintas.
 
 ## Compatibilidade: Windows, macOS, Linux e VDI
 
@@ -75,8 +81,10 @@ maquina, abra `http://IP_DO_SERVIDOR:8080/` no navegador.
    que o arquivo resolvido continue dentro da raiz configurada.
 6. `build_response` monta a linha de status e todos os cabecalhos obrigatorios.
    A resposta e enviada por `sendall`, que repete `send` ate transmitir tudo.
-7. Na Parte 1, a conexao e fechada depois de uma resposta. A Parte 2 adicionara
-   o laco de conexao persistente e o timeout ocioso especifico.
+7. Em `server.py`, a thread repete o processamento no mesmo socket. A conexao
+   permanece aberta por padrao no HTTP/1.1; `Connection: close`, desconexao ou
+   5 segundos de ociosidade a encerram. A sobra preservada pelo parser permite
+   processar tambem requisicoes agrupadas no mesmo `recv()`.
 
 ### Organizacao
 
@@ -87,13 +95,15 @@ maquina, abra `http://IP_DO_SERVIDOR:8080/` no navegador.
 - `tests/`: testes unitarios e de integracao com sockets reais.
 
 O identificador exigido pelo enunciado esta na constante `SERVER_ID`, em
-`http_protocol.py`. O valor inicial e `Grupo-Kozak/1.0` e pode ser trocado em
-um unico local quando o grupo receber seu identificador definitivo.
+`http_protocol.py`: `Grupo7`.
 
 ## Respostas implementadas
 
 Todas as respostas usam HTTP/1.1 e incluem `Date`, `Server`, `Content-Length`,
-`Content-Type` e `Connection: close`.
+`Content-Type` e `Connection`. Respostas normais usam `keep-alive`; respostas
+com fechamento solicitado, metodo nao suportado ou requisicao malformada usam
+`close`. Requisicoes GET/HEAD so podem ter corpo vazio; corpos e
+`Transfer-Encoding` nao sao suportados por este servidor de arquivos.
 
 | Status | Situacao |
 | --- | --- |
@@ -115,13 +125,15 @@ python3 -m unittest discover -s tests -v
 Use `py -3` ou `python` no Windows. Nao ha dependencias externas a instalar.
 
 A suite cobre fragmentacao do fluxo TCP, bytes excedentes, parsing invalido,
-GET, HEAD, MIME types, codigos obrigatorios, tres formas de travessia e
-atendimento concorrente com um cliente lento.
+GET, HEAD, MIME types, codigos obrigatorios, travessias, concorrencia,
+persistencia com dez requisicoes, requisicoes agrupadas, Connection: close,
+timeout ocioso e fechamento seguro do servidor.
 
 ## Testes manuais com curl
 
-Substitua o IP nos exemplos. `--path-as-is` impede o curl de normalizar a
-travessia antes de envia-la.
+O roteiro completo, com comandos para Windows, macOS e Linux, esta em
+`ROTEIRO_DE_TESTES.md`. `--path-as-is` impede o curl de normalizar a travessia
+antes de envia-la.
 
 No Windows, use `curl.exe` no PowerShell. No macOS e Linux, use `curl` nos
 mesmos exemplos. Substitua `192.168.0.10` pelo IPv4 real do servidor.
@@ -156,9 +168,16 @@ Nao use capturas de `localhost` no relatorio. A pagina `www/index.html`
 referencia CSS, JavaScript e PNG, portanto o navegador realiza varias
 requisicoes e permite testar a interoperabilidade com outro grupo.
 
-## Limites atuais
+## Medicao C1 x C2
 
-Esta entrega implementa somente a Parte 1. Cada conexao atende uma requisicao
-e retorna `Connection: close`. A Parte 2 reutilizara a sobra ja preservada pelo
-parser para atender varias requisicoes no mesmo socket, adicionara timeout de
-conexao ociosa e produzira as medicoes comparativas C1 e C2.
+Com o servidor em outra maquina e o Wireshark capturando na interface real:
+
+```text
+python3 tools/measure_connections.py --host IP_SERVIDOR --port 8080 --mode c1
+python3 tools/measure_connections.py --host IP_SERVIDOR --port 8080 --mode c2
+```
+
+No Windows, use `py -3` ou `python`. O script executa dez GETs ao mesmo
+recurso nos dois modos: C1 abre dez conexoes TCP; C2 reutiliza uma conexao.
+Handshakes, pacotes e bytes devem ser **extraidos das capturas**, nao
+inventados ou inferidos apenas pela saida do cliente.
