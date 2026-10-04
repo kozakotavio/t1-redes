@@ -95,13 +95,16 @@ class Part1HTTPServer:
         """Solicita o encerramento do laco de accept."""
 
         self._shutdown.set()
-        if self._server_socket is not None:
+        # A thread de serve_forever pode limpar o atributo entre a verificacao
+        # e o close. Guardar a referencia local evita essa corrida.
+        server_socket = self._server_socket
+        if server_socket is not None:
             try:
-                self._server_socket.shutdown(socket.SHUT_RDWR)
+                server_socket.shutdown(socket.SHUT_RDWR)
             except OSError:
                 pass
             try:
-                self._server_socket.close()
+                server_socket.close()
             except OSError:
                 pass
 
@@ -232,4 +235,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

@@ -121,7 +121,26 @@ class ServerIntegrationTests(unittest.TestCase):
         self.assertEqual(status, "HTTP/1.1 200 OK")
         self.assertLess(elapsed, 0.75)
 
+    def test_shutdown_fecha_socket_mesmo_se_thread_limpar_atributo(self):
+        server = Part1HTTPServer("127.0.0.1", 0, self.root)
+
+        class SocketSimulado:
+            def __init__(self):
+                self.closed = False
+
+            def shutdown(self, _how):
+                server._server_socket = None
+
+            def close(self):
+                self.closed = True
+
+        socket_simulado = SocketSimulado()
+        server._server_socket = socket_simulado
+
+        server.shutdown()
+
+        self.assertTrue(socket_simulado.closed)
+
 
 if __name__ == "__main__":
     unittest.main()
-
