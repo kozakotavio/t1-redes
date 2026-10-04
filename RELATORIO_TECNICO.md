@@ -140,8 +140,8 @@ e fechamento. Métodos não suportados recebem 405 e fechamento.
 
 **Resultados entre máquinas:** **PENDENTE**. Os testes automatizados cobrem
 esses casos, HEAD, MIME obrigatório (`.html`, `.css`, `.js`, `.json`, `.txt`,
-`.png`, `.jpg`, `.pdf`) e fallback binário. A página em `www/` referencia CSS,
-JavaScript e JPEG para que o navegador faça múltiplas requisições.
+`.png`, `.jpg`, `.pdf`) e fallback binário. A página em `www/` referencia apenas
+o JPEG para que o navegador faça requisições separadas para HTML e imagem.
 
 ## 6. Conexões persistentes e timeout
 
@@ -227,7 +227,7 @@ decorre da contagem de conexões e deve ser confrontada com as capturas.
 
 O navegador de outro grupo deve abrir `www/index.html` no nosso servidor;
 nosso navegador deve abrir a página do servidor deles. O teste passa quando
-HTML, CSS, JavaScript e JPEG carregam. **Resultado presencial:**
+HTML e JPEG carregam. **Resultado presencial:**
 **PENDENTE**. Todos os integrantes devem conseguir explicar sockets, parser,
 respostas, segurança, threads, persistência e análise C1/C2.
 
@@ -267,7 +267,7 @@ são intencionais e não impedem os objetivos especificados no trabalho.
 | Caso | Como verificar | Critério de aprovação |
 | --- | --- | --- |
 | Inicialização | CLI com raiz existente e porta 8080 | Log mostra escuta em `0.0.0.0:8080` |
-| Página e recursos | Navegador remoto e aba de rede | HTML, CSS, JS e JPEG com 200 |
+| Página e recursos | Navegador remoto e aba de rede | HTML e JPEG com 200 |
 | GET e HEAD | `curl -i /` e `curl -I /` | Mesmo tipo/tamanho; HEAD sem corpo |
 | Erros | Comandos da seção 5 | 400, 403, 404 e 405 corretos |
 | Cabeçalhos | Inspeção com curl/Wireshark | Date, Server, Length, Type, Connection |

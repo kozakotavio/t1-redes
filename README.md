@@ -36,8 +36,8 @@ suite em Windows, macOS e Linux a cada push; os resultados ficam na aba
 2. Rode a suite. Todos os testes devem terminar com `OK`.
 3. Inicie o servidor com o comando da tabela. A mensagem deve mostrar
    `Servidor ouvindo em 0.0.0.0:8080`.
-4. Na mesma maquina, acesse `http://127.0.0.1:8080/`. Verifique se aparecem
-   a imagem e o aviso `JavaScript carregado com sucesso.`
+4. Na mesma maquina, acesse `http://127.0.0.1:8080/`. Verifique se aparece
+   somente a imagem.
 5. Descubra o IPv4 dessa maquina (`ipconfig` no Windows; `ip addr` no Linux;
    `ifconfig` ou as configuracoes de rede no macOS). De outra maquina da rede,
    acesse `http://IP_DO_SERVIDOR:8080/`.
@@ -165,8 +165,8 @@ tcp.port == 8080
 ```
 
 Nao use capturas de `localhost` no relatorio. A pagina `www/index.html`
-referencia CSS, JavaScript e JPEG, portanto o navegador realiza varias
-requisicoes e permite testar a interoperabilidade com outro grupo.
+referencia apenas o JPEG: o navegador solicita HTML e imagem em requisicoes
+separadas, permitindo testar a interoperabilidade com outro grupo.
 
 ## Medicao C1 x C2
 

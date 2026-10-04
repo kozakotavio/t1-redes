@@ -36,9 +36,9 @@ ao final, junto com data, horario e os dois IPs.
 ## 2. Funcionamento e conformidade HTTP
 
 Inicie o servidor na maquina A. Na maquina B, abra
-`http://IP_SERVIDOR:8080/` no navegador e verifique HTML, CSS, JavaScript e
-imagem. O texto `JavaScript carregado com sucesso.` confirma o recurso JS.
-Abra as ferramentas de rede do navegador e confirme quatro respostas 200.
+`http://IP_SERVIDOR:8080/` no navegador e verifique que somente a imagem
+aparece na página. Abra as ferramentas de rede do navegador e confirme as
+respostas 200 para o HTML e o JPEG.
 
 No terminal da maquina B, use `curl.exe` no Windows ou `curl` nos comandos
 abaixo. Para copiar e colar, substitua `IP_SERVIDOR` primeiro.
@@ -164,7 +164,8 @@ com os tempos medidos e explique variacoes de agendamento e rede.
 ## 7. Teste com outro grupo e entrega
 
 Na aula, o navegador do grupo A deve abrir a pagina do servidor do grupo B e
-vice-versa. A pagina so passa se imagem, CSS e JS carregarem corretamente.
+vice-versa. A nossa pagina so passa se o HTML e a imagem carregarem
+corretamente.
 Prepare todos os integrantes para explicar qualquer parte de `server.py`,
 `http_protocol.py` e `file_service.py`.
 
