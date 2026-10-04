@@ -15,7 +15,9 @@ from file_service import (
 class FileServiceTests(unittest.TestCase):
     def setUp(self):
         self.temporary_directory = tempfile.TemporaryDirectory()
-        self.root = Path(self.temporary_directory.name)
+        # /var pode apontar para /private/var no macOS; o TEMP do Windows
+        # tambem pode usar um alias 8.3. Compare sempre caminhos canonicos.
+        self.root = Path(self.temporary_directory.name).resolve()
         (self.root / "index.html").write_text("inicio", encoding="utf-8")
         (self.root / "espaco aqui.txt").write_text("ok", encoding="utf-8")
 
@@ -62,4 +64,3 @@ class FileServiceTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
