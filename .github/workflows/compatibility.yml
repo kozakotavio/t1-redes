@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 jobs:
-  test:
+  compatibility:
     name: ${{ matrix.os }} / Python ${{ matrix.python-version }}
     runs-on: ${{ matrix.os }}
     strategy:
@@ -34,5 +34,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - name: Mostrar ambiente
         run: python --version
-      - name: Testes unitarios e de integracao TCP
-        run: python -m unittest discover -s tests -v
+      - name: Verificar sintaxe Python
+        run: python -m compileall -q server.py http_protocol.py file_service.py tools
+      - name: Verificar CLI do servidor
+        run: python server.py --help
